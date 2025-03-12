@@ -1,3 +1,9 @@
+"""  
+Module to initialize mediapipe modules and objects
+
+This module provides a function to initialize mediapipe modules and objects for pose and hand detection.
+"""
+
 import mediapipe as mp
 
 def init_mediapipe_modules():

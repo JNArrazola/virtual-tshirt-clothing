@@ -1,111 +1,101 @@
-import cv2
-import os
-import numpy as np
+"""  
+Main script for the Virtual Dressing Room application.
 
-from src.config import SHIRT_DIRECTORY, BUTTON_IMAGE_PATH, WIDTH_SCALE, SHIRT_RATIO, NAV_SPEED
+@authors: 
+    - Vanessa Nataly Manzano Estrada
+    - Juan Daniel Alonzo Lopez
+    - Joshua Nathaniel Arrazola Elizondo
+"""
+
+import cv2
+import numpy as np
+from src.config import SHIRT_DIRECTORY, WIDTH_SCALE, SHIRT_RATIO, SELECTION_THRESHOLD, CLOSET_PANEL_WIDTH
 from src.overlay_utils import apply_overlay
 from src.mediapipe_utils import init_mediapipe_modules
+from src.closet_panel import load_closet_items, draw_closet_panel
 
-# Inicialización de MediaPipe
 mp_pose, mp_hands, mp_draw, pose_detector, hand_detector = init_mediapipe_modules()
 
-# Inicializar cámara
-video_stream = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(0)
 
-# Cargar imágenes de camisas y botones
-shirt_list = os.listdir(SHIRT_DIRECTORY)
-print("Available shirts:", shirt_list)
-print(f"Total shirts found: {len(shirt_list)}")
-
-current_shirt = 0
-
-button_img_right = cv2.imread(BUTTON_IMAGE_PATH, cv2.IMREAD_UNCHANGED)
-if button_img_right is None:
-    print("Error loading button image. Check the path.")
+closet_items = load_closet_items(SHIRT_DIRECTORY)
+if not closet_items:
+    print("No se encontraron playeras en la carpeta del vestidor.")
     exit()
-button_img_left = cv2.flip(button_img_right, 1)
 
-nav_counter_right = 0
-nav_counter_left = 0
+print("Playeras cargadas:")
+for item in closet_items:
+    print(item['filename'])
 
-while video_stream.isOpened():
-    ret, frame = video_stream.read()
+current_shirt_index = 0
+
+selection_counter = 0
+hovered_thumbnail_index = None
+
+while cap.isOpened():
+    ret, frame = cap.read()
     if not ret:
-        print("Empty frame, skipping...")
+        print("Frame vacío, se omite...")
         continue
 
-    # Espejar la imagen para efecto selfie
     frame = cv2.flip(frame, 1)
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    
-    # Procesar imagen con MediaPipe
+
     pose_results = pose_detector.process(rgb_frame)
     hand_results = hand_detector.process(rgb_frame)
-    
+
     if pose_results.pose_landmarks:
-        left_shldr = pose_results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER]
-        right_shldr = pose_results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_SHOULDER]
-        
-        frame_height, frame_width, _ = frame.shape
-        left_px = (int(left_shldr.x * frame_width), int(left_shldr.y * frame_height))
-        right_px = (int(right_shldr.x * frame_width), int(right_shldr.y * frame_height))
-        
-        # Calcular dimensiones y posición de la camisa
-        calculated_width = int(abs(left_px[0] - right_px[0]) * WIDTH_SCALE)
-        calculated_height = int(calculated_width * SHIRT_RATIO)
-        top_left_x = max(0, min(frame_width - calculated_width, min(left_px[0], right_px[0]) - int(calculated_width * 0.15)))
-        top_left_y = max(0, min(frame_height - calculated_height, min(left_px[1], right_px[1]) - int(calculated_height * 0.2)))
-        
-        shirt_path = os.path.join(SHIRT_DIRECTORY, shirt_list[current_shirt])
-        shirt_image = cv2.imread(shirt_path, cv2.IMREAD_UNCHANGED)
+        left_shoulder = pose_results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER]
+        right_shoulder = pose_results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_SHOULDER]
+
+        frame_h, frame_w, _ = frame.shape
+        left_px = (int(left_shoulder.x * frame_w), int(left_shoulder.y * frame_h))
+        right_px = (int(right_shoulder.x * frame_w), int(right_shoulder.y * frame_h))
+
+        shirt_w = int(abs(left_px[0] - right_px[0]) * WIDTH_SCALE)
+        shirt_h = int(shirt_w * SHIRT_RATIO)
+        top_left_x = max(0, min(frame_w - shirt_w, min(left_px[0], right_px[0]) - int(shirt_w * 0.15)))
+        top_left_y = max(0, min(frame_h - shirt_h, min(left_px[1], right_px[1]) - int(shirt_h * 0.2)))
+
+        shirt_image = closet_items[current_shirt_index]['image']
         if shirt_image is not None:
-            shirt_image = cv2.resize(shirt_image, (calculated_width, calculated_height))
-            frame = apply_overlay(frame, shirt_image, top_left_x, top_left_y)
-        
-        # Dibujo de landmarks para depuración
+            shirt_resized = cv2.resize(shirt_image, (shirt_w, shirt_h))
+            frame = apply_overlay(frame, shirt_resized, top_left_x, top_left_y)
+
         mp_draw.draw_landmarks(frame, pose_results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
-    
-    # Superponer botones de navegación
-    right_button_pos = (frame.shape[1] - button_img_right.shape[1] - 10, 
-                        frame.shape[0] // 2 - button_img_right.shape[0] // 2)
-    left_button_pos = (10, frame.shape[0] // 2 - button_img_left.shape[0] // 2)
-    frame = apply_overlay(frame, button_img_right, *right_button_pos)
-    frame = apply_overlay(frame, button_img_left, *left_button_pos)
-    
-    # Detección de interacción con botones usando landmarks de manos
+
+    frame, thumb_boxes = draw_closet_panel(frame, closet_items, current_shirt_index)
+
     if hand_results.multi_hand_landmarks:
-        for hand_landmark in hand_results.multi_hand_landmarks:
-            index_tip = hand_landmark.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
-            tip_x = int(index_tip.x * frame.shape[1])
-            tip_y = int(index_tip.y * frame.shape[0])
+        for hand_landmarks in hand_results.multi_hand_landmarks:
+            index_tip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+            finger_x = int(index_tip.x * frame.shape[1])
+            finger_y = int(index_tip.y * frame.shape[0])
             
-            # Botón derecho
-            if tip_x > frame.shape[1] - button_img_right.shape[1] - 10 and \
-               frame.shape[0] // 2 - button_img_right.shape[0] // 2 < tip_y < frame.shape[0] // 2 + button_img_right.shape[0] // 2:
-                nav_counter_right += 1
-                cv2.ellipse(frame, (frame.shape[1] - button_img_right.shape[1] // 2 - 10, frame.shape[0] // 2),
-                            (66, 66), 0, 0, nav_counter_right * NAV_SPEED, (0, 255, 0), 20)
-                if nav_counter_right * NAV_SPEED > 360:
-                    nav_counter_right = 0
-                    current_shirt = (current_shirt + 1) % len(shirt_list)
-                    print(f"Switched to next shirt: {current_shirt}")
-            # Botón izquierdo
-            elif tip_x < button_img_left.shape[1] + 10 and \
-                 frame.shape[0] // 2 - button_img_left.shape[0] // 2 < tip_y < frame.shape[0] // 2 + button_img_left.shape[0] // 2:
-                nav_counter_left += 1
-                cv2.ellipse(frame, (button_img_left.shape[1] // 2 + 10, frame.shape[0] // 2),
-                            (66, 66), 0, 0, nav_counter_left * NAV_SPEED, (0, 255, 0), 20)
-                if nav_counter_left * NAV_SPEED > 360:
-                    nav_counter_left = 0
-                    current_shirt = current_shirt - 1 if current_shirt > 0 else len(shirt_list) - 1
-                    print(f"Switched to previous shirt: {current_shirt}")
+            if finger_x < CLOSET_PANEL_WIDTH:
+                for idx, (x1, y1, x2, y2) in enumerate(thumb_boxes):
+                    if x1 <= finger_x <= x2 and y1 <= finger_y <= y2:
+                        if hovered_thumbnail_index == idx:
+                            selection_counter += 1
+                        else:
+                            hovered_thumbnail_index = idx
+                            selection_counter = 1
+                        
+                        cv2.circle(frame, ((x1+x2)//2, (y1+y2)//2), 15, (0, 0, 255), 3)
+                        if selection_counter >= SELECTION_THRESHOLD:
+                            current_shirt_index = idx
+                            selection_counter = 0
+                        break
+                else:
+                    hovered_thumbnail_index = None
+                    selection_counter = 0
             else:
-                nav_counter_right = 0
-                nav_counter_left = 0
-                
-    cv2.imshow('Virtual Try-On', frame)
-    if cv2.waitKey(5) & 0xFF == 27:  # Presiona 'Esc' para salir
+                hovered_thumbnail_index = None
+                selection_counter = 0
+
+    cv2.imshow("Virtual Dressing Room", frame)
+    if cv2.waitKey(5) & 0xFF == 27:  
         break
 
-video_stream.release()
+cap.release()
 cv2.destroyAllWindows()
