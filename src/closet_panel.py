@@ -10,6 +10,15 @@ import os
 import numpy as np
 from src.config import CLOSET_PANEL_WIDTH, THUMBNAIL_SIZE
 
+"""  
+Function to load closet items from a folder
+
+Parameters:
+- folder_path: path to the folder containing the closet items
+
+Returns:
+- items: a list of dictionaries, each containing the following
+"""
 def load_closet_items(folder_path):
     items = []
     file_list = os.listdir(folder_path)
@@ -25,6 +34,18 @@ def load_closet_items(folder_path):
             })
     return items
 
+"""  
+Function to draw the closet panel on the screen
+
+Parameters:
+- frame: the frame to draw the closet panel on
+- closet_items: a list of closet items to display
+- selected_index: the index of the selected item in the closet
+
+Returns:
+- frame: the frame with the closet panel drawn on it
+- thumbnail_positions: a list of tuples containing the positions of the thumbnails in the closet panel
+"""
 def draw_closet_panel(frame, closet_items, selected_index):
     panel_width = CLOSET_PANEL_WIDTH
     panel = np.zeros((frame.shape[0], panel_width, 3), dtype=np.uint8)

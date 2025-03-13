@@ -8,6 +8,18 @@ The overlay image can have an alpha channel to control transparency.
 import cv2
 import numpy as np
 
+"""  
+Function to apply an overlay image on top of a background image at a specified position.
+
+Parameters:
+- background: the background image to overlay on
+- overlay: the overlay image to apply
+- pos_x: the x-coordinate position to place the overlay
+- pos_y: the y-coordinate position to place the overlay
+
+Returns:
+- result: the resulting image with the overlay applied
+"""
 def apply_overlay(background, overlay, pos_x, pos_y):
     bg_h, bg_w = background.shape[:2]
 

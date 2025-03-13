@@ -15,7 +15,7 @@ from src.mediapipe_utils import init_mediapipe_modules
 from src.closet_panel import load_closet_items, draw_closet_panel
 
 def overlay_shirt_on_frame(frame, pose_result, closet_items, selected_index, mp_pose, mp_draw):
-    """Superpone la camisa seleccionada en función de la detección de pose."""
+    """Show the selected shirt on the frame."""
     if pose_result.pose_landmarks:
         landmarks = pose_result.pose_landmarks.landmark
         left_shoulder = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER]
@@ -37,9 +37,7 @@ def overlay_shirt_on_frame(frame, pose_result, closet_items, selected_index, mp_
 
 def process_hand_selection(frame, hand_result, panel_boxes, current_index, dwell_counter, mp_hands):
     """
-    Procesa la selección de la camisa mediante la interacción con la mano.
-    Si el dedo índice se posiciona sobre una miniatura por cierto número de frames,
-    se actualiza la camisa seleccionada.
+    Process hand selection based on the position of the index finger tip.
     """
     for hand_landmarks in hand_result.multi_hand_landmarks:
         tip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
@@ -74,8 +72,11 @@ def main():
     selected_shirt = 0
     dwell_counter = 0
 
+    # Main loop
     while cap.isOpened():
         ret, frame = cap.read()
+
+        # Skip empty frames
         if not ret:
             continue
 
@@ -85,9 +86,11 @@ def main():
         pose_out = pose_detector.process(rgb_frame)
         hand_out = hand_detector.process(rgb_frame)
         
+        # Overlay shirt on frame
         frame = overlay_shirt_on_frame(frame, pose_out, closet_items, selected_shirt, mp_pose, mp_draw)
         frame, thumb_boxes = draw_closet_panel(frame, closet_items, selected_shirt)
         
+        # Process hand selection
         if hand_out.multi_hand_landmarks:
             frame, selected_shirt, dwell_counter = process_hand_selection(frame, hand_out, thumb_boxes, selected_shirt, dwell_counter, mp_hands)
         
@@ -98,5 +101,6 @@ def main():
     cap.release()
     cv2.destroyAllWindows()
 
+# Entry point of the application
 if __name__ == "__main__":
     main()
